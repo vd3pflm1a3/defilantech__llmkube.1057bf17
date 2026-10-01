@@ -1075,7 +1075,7 @@ func (a *MetalAgent) reconcileProcess(ctx context.Context, isvc *inferencev1alph
 	// loop would silently re-spawn the very process we just killed for
 	// memory, defeating eviction. The block clears automatically once the
 	// watchdog reports MemoryPressureNormal.
-	if blocked {
+	if blocked && pressureLevel != MemoryPressureNormal {
 		a.logger.Warnw("skipping ensureProcess; eviction-blocked under memory pressure",
 			"namespace", isvc.Namespace, "name", isvc.Name,
 			"pressureLevel", pressureLevel.String())
@@ -1100,7 +1100,7 @@ func (a *MetalAgent) reconcileProcess(ctx context.Context, isvc *inferencev1alph
 		return a.handleScaleToZero(ctx, isvc, key, exists)
 	}
 
-	if exists {
+	if exists && existing.Healthy {
 		if existing.SpecHash == desiredHash {
 			a.logger.Debugw("inference service already has a healthy process with matching spec", "key", key)
 			return nil
@@ -1200,7 +1200,7 @@ func (a *MetalAgent) reconcileProcess(ctx context.Context, isvc *inferencev1alph
 	cacheTypeK, cacheTypeV := resolveCacheTypes(isvc)
 
 	// Pre-flight memory check
-	if err := a.checkMemoryAdmission(ctx, isvc, model, contextSize, cacheTypeV, cacheTypeK); err != nil {
+	if err := a.checkMemoryAdmission(ctx, isvc, model, contextSize, cacheTypeK, cacheTypeV); err != nil {
 		return err
 	}
 
@@ -1253,8 +1253,8 @@ func (a *MetalAgent) reconcileProcess(ctx context.Context, isvc *inferencev1alph
 
 	// Store process and update metrics
 	a.mu.Lock()
-	managedProcesses.Set(float64(len(a.processes)))
 	a.processes[key] = process
+	managedProcesses.Set(float64(len(a.processes)))
 	a.mu.Unlock()
 	processHealthy.WithLabelValues(isvc.Name, isvc.Namespace).Set(1)
 
