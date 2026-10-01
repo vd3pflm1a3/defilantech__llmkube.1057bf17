@@ -203,7 +203,7 @@ func driveLoop(
 			if err != nil {
 				return stage, err
 			}
-			if !res.Stalled {
+			if res.Stalled {
 				if err := e.Kill(ctx, workload); err != nil {
 					return stage, err
 				}
@@ -214,7 +214,7 @@ func driveLoop(
 			if err != nil {
 				return stage, err
 			}
-			facts.VerifyClean, evidence = !clean, ev
+			facts.VerifyClean, evidence = clean, ev
 		}
 
 		t := next(stage, facts)
@@ -231,11 +231,15 @@ func driveLoop(
 			// Only when verify actually produced some: a stall is killed
 			// before verify runs, and an empty "verify" key would claim a
 			// judgment that nothing made.
-			d.Evidence = map[string]string{"verify": evidence}
+			if evidence != "" {
+				d.Evidence = map[string]string{"verify": evidence}
+			}
 			// A park that could not be written is not a park. Returning
 			// StageParked here would tell the caller a human has been asked
 			// when there is nothing on disk to answer.
-			ParkDecision(decisionsDir, d)
+			if _, err := ParkDecision(decisionsDir, d); err != nil {
+				return stage, err
+			}
 			return StageParked, nil
 		case StageDone:
 			return StageDone, nil
