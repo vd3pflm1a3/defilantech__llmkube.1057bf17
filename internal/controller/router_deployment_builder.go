@@ -117,10 +117,10 @@ func (r *ModelRouterReconciler) newRouterDeployment(
 	// serializes swaps through a single in-process lock, so a second replica
 	// would race it and thrash the shared GPU slot. Pin to 1 regardless of
 	// spec.proxy.replicas until cross-replica swap coordination lands.
-	if hasPools && mr.Spec.Proxy == nil {
+	if hasPools {
 		replicas = 1
 	}
-	if resources.Requests == nil || resources.Limits == nil {
+	if resources.Requests == nil && resources.Limits == nil {
 		resources = defaultRouterProxyResources()
 	}
 
@@ -140,7 +140,7 @@ func (r *ModelRouterReconciler) newRouterDeployment(
 	serviceAccountName := ""
 	env := []corev1.EnvVar{}
 	if hasPools {
-		serviceAccountName = mr.Name
+		serviceAccountName = routerProxyResourceName(mr.Name)
 		env = append(env, corev1.EnvVar{Name: "ROUTER_NAME", Value: mr.Name})
 	}
 
@@ -193,8 +193,8 @@ func (r *ModelRouterReconciler) newRouterDeployment(
 							},
 							Resources:       resources,
 							SecurityContext: routerProxyContainerSecurityContext(),
-							LivenessProbe:   routerProxyProbe(5, 5),
-							ReadinessProbe:  routerProxyProbe(20, 10),
+							LivenessProbe:   routerProxyProbe(20, 10),
+							ReadinessProbe:  routerProxyProbe(5, 5),
 						},
 					},
 					Volumes: []corev1.Volume{
